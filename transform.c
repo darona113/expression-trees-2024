@@ -10,6 +10,8 @@
 static bool factor_difference_of_squares(Expression* const expression);
 static bool fold_multipliers_to_diff_of_squares(Expression* const expression);
 
+static bool fold_multipliers(Expression* const expression); 
+
 // Make deep copy of a given expression.
 static Expression* expression_copy(const Expression* const expression);
 
@@ -23,7 +25,7 @@ void simplify_expression(Expression* const expression)
 	assert(expression != NULL);
 
 	// @NOTE: Put simplification transformer functions here
-	fold_multipliers_to_diff_of_squares(expression);
+	 fold_multipliers(expression);
 }
 
 void expand_expression(Expression* const expression)
@@ -31,7 +33,7 @@ void expand_expression(Expression* const expression)
 	assert(expression != NULL);
 
 	// @NOTE: Put expander transformer functions here
-	factor_difference_of_squares(expression);
+	fold_multipliers(expression);
 }
 
 double evaluate_expression(const Expression* const expression)
@@ -84,6 +86,82 @@ double evaluate_expression(const Expression* const expression)
 
 	// @NOTE: ExpressionType_Empty and LiteralTag_Symbol case
 	return 0;
+}
+
+static bool fold_multipliers(Expression* const expression) {
+    assert(expression != NULL);
+
+    switch (expression->type) {
+    case ExpressionType_Unary: {
+        UnaryExpression* const unary = (UnaryExpression*)expression;
+        return fold_multipliers(unary->subexpression);
+    }
+    case ExpressionType_Binary: {
+        BinaryExpression* const binary = (BinaryExpression*)expression;
+
+        // Try to fold multipliers in the sides of binary expression first
+        const bool other_result = fold_multipliers(binary->left) |
+                                  fold_multipliers(binary->right);
+
+        // First step, find multiplication of two expressions
+        if (binary->operator == TokenType_Multiply) {
+            Expression* a = NULL;
+            Expression* b = NULL;
+            bool lhs_is_two = false;
+            bool rhs_is_two = false;
+
+            // Left subexpression must be a literal with value 2
+            if (binary->left->type == ExpressionType_Literal) {
+                Literal* const number = (Literal*)binary->left;
+                if (number->tag == LiteralTag_Number && fabs(number->number - 2.0) < DBL_EPSILON) {
+                    lhs_is_two = true;
+                    a = binary->right;
+                }
+            }
+
+            // Same as above, but for the right subexpression
+            if (binary->right->type == ExpressionType_Literal) {
+                Literal* const number = (Literal*)binary->right;
+                if (number->tag == LiteralTag_Number && fabs(number->number - 2.0) < DBL_EPSILON) {
+                    rhs_is_two = true;
+                    b = binary->left;
+                }
+            }
+
+            // This is true when left and right multipliers are 2
+            if (lhs_is_two && rhs_is_two) {
+                // Change operator from multiplication to exponentiation
+                binary->operator = TokenType_Exponent;
+
+                // Remove parentheses from factors
+                a->parenthesised = false;
+                b->parenthesised = false;
+
+                // Create new (2 * 2) expression
+                BinaryExpression* new_lhs = expression_binary_create(
+                    TokenType_Multiply, expression_copy(a), expression_copy(b));
+                // 2 * 2 subexpression must be parenthesised
+                new_lhs->base.parenthesised = true;
+
+                // Destroy old expressions
+                expression_destroy(&binary->left);
+                expression_destroy(&binary->right);
+
+                // Assign the new expression as the left subexpression
+                binary->left = (Expression*)new_lhs;
+                binary->right = (Expression*)expression_literal_create_number(2);
+
+                return true;
+            }
+        }
+
+        // Maybe the multipliers were found deeper in the expression?
+        return other_result;
+    }
+    }
+
+    // Not found
+    return false;
 }
 
 //
