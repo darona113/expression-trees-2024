@@ -9,6 +9,7 @@
 // @NOTE: Put transformer functions prototypes here
 static bool factor_difference_of_squares(Expression* const expression);
 static bool fold_multipliers_to_diff_of_squares(Expression* const expression);
+static bool evaluate_expression(const Expression* const expression);
 
 // Make deep copy of a given expression.
 static Expression* expression_copy(const Expression* const expression);
@@ -34,7 +35,7 @@ void expand_expression(Expression* const expression)
 	factor_difference_of_squares(expression);
 }
 
-double evaluate_expression(const Expression* const expression)
+bool evaluate_expression(const Expression* const expression)
 {
 	assert(expression != NULL);
 
