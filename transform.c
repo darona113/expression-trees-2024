@@ -9,6 +9,7 @@
 // @NOTE: Put transformer functions prototypes here
 static bool factor_difference_of_squares(Expression* const expression);
 static bool fold_multipliers_to_diff_of_squares(Expression* const expression);
+static bool fold_multipliers(Expression* const expression);
 
 // Make deep copy of a given expression.
 static Expression* expression_copy(const Expression* const expression);
@@ -24,6 +25,7 @@ void simplify_expression(Expression* const expression)
 
 	// @NOTE: Put simplification transformer functions here
 	fold_multipliers_to_diff_of_squares(expression);
+	fold_multipliers(expression);
 }
 
 void expand_expression(Expression* const expression)
@@ -89,6 +91,67 @@ double evaluate_expression(const Expression* const expression)
 //
 // Expression transformers
 //
+
+bool fold_multipliers(Expression* const expression)
+{
+    assert(expression != NULL);
+
+    switch (expression->type) {
+        case ExpressionType_Unary: {
+            UnaryExpression* const unary = (UnaryExpression*)expression;
+            return fold_multipliers(unary->subexpression);
+        } break;
+
+        case ExpressionType_Binary: {
+            BinaryExpression* const binary = (BinaryExpression*)expression;
+
+            // Try to fold multipliers in the sides of binary expression first
+            const bool other_result = fold_multipliers(binary->left) |
+                                     fold_multipliers(binary->right);
+
+            // Check if the operator is multiplication
+            if (binary->operator == TokenType_Multiply) {
+                // Check if both operands are literals
+                if (binary->left->type == ExpressionType_Literal &&
+                    binary->right->type == ExpressionType_Literal) {
+                    Literal* const left_literal = (Literal*)binary->left;
+                    Literal* const right_literal = (Literal*)binary->right;
+
+                    if (left_literal->tag == LiteralTag_Number &&
+                        right_literal->tag == LiteralTag_Number) {
+                        // Calculate the product of the literals
+                        double product = left_literal->number * right_literal->number;
+
+                        // Replace the multiplication with a new literal
+                        Literal* new_literal = (Literal*)expression_copy(binary->left);
+                        new_literal->tag = LiteralTag_Number;
+                        new_literal->number = product;
+
+                        // Destroy old expressions
+                        expression_destroy(&binary->left);
+                        expression_destroy(&binary->right);
+
+                        // Assign the new literal as the only operand
+                        binary->left = (Expression*)new_literal;
+                        binary->right = NULL;
+
+                        return true;
+                    }
+                }
+            }
+
+            // Maybe the multipliers were found deeper in the expression?
+            return other_result;
+        } break;
+    }
+
+    // Not found
+    return false;
+}
+
+
+
+
 
 // Transform expression to factor differences of squares and return
 // true if if differences of squared were found, false - otherwise.
