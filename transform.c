@@ -1,5 +1,5 @@
 #include "transform.h"
-
+#include <stdlib.h>
 #include <assert.h>
 #include <float.h>
 #include <math.h>
@@ -88,70 +88,62 @@ double evaluate_expression(const Expression* const expression)
 	return 0;
 }
 
-//
-// Expression transformers
-//
-
-bool fold_multipliers(Expression* const expression)
-{
+//My func
+static bool fold_multipliers(Expression* const expression) {
     assert(expression != NULL);
 
     switch (expression->type) {
         case ExpressionType_Unary: {
             UnaryExpression* const unary = (UnaryExpression*)expression;
             return fold_multipliers(unary->subexpression);
-        } break;
+        }
 
         case ExpressionType_Binary: {
             BinaryExpression* const binary = (BinaryExpression*)expression;
 
-            // Try to fold multipliers in the sides of binary expression first
+            // Рекурсивно обработать левый и правый операнды
             const bool other_result = fold_multipliers(binary->left) |
-                                     fold_multipliers(binary->right);
+                                      fold_multipliers(binary->right);
 
-            // Check if the operator is multiplication
-            if (binary->operator == TokenType_Multiply) {
-                // Check if both operands are literals
-                if (binary->left->type == ExpressionType_Literal &&
-                    binary->right->type == ExpressionType_Literal) {
-                    Literal* const left_literal = (Literal*)binary->left;
-                    Literal* const right_literal = (Literal*)binary->right;
+            // Проверить, является ли операция возведением в степень
+            if (binary->operator == TokenType_Exponent) {
+                // Проверить, является ли левый операнд бинарным выражением с вычитанием
+                if (binary->left->type == ExpressionType_Binary) {
+                    BinaryExpression* const lhs = (BinaryExpression*)binary->left;
 
-                    if (left_literal->tag == LiteralTag_Number &&
-                        right_literal->tag == LiteralTag_Number) {
-                        // Calculate the product of the literals
-                        double product = left_literal->number * right_literal->number;
+                    if (lhs->operator == TokenType_Minus) {
+                        // Создать новое бинарное выражение для частного степеней
+                        BinaryExpression* const new_expr = (BinaryExpression*)malloc(sizeof(BinaryExpression));
+                        new_expr->base.type = ExpressionType_Binary;
+                        new_expr->operator = TokenType_Divide;
+                        // Предполагаем, что expression_copy возвращает указатель на Expression
+                        new_expr->left = expression_copy(lhs->left);
+                        new_expr->right = expression_copy(lhs->right);
 
-                        // Replace the multiplication with a new literal
-                        Literal* new_literal = (Literal*)expression_copy(binary->left);
-                        new_literal->tag = LiteralTag_Number;
-                        new_literal->number = product;
+                        // Освободить память старого выражения
+                        expression_destroy((Expression**)&binary);
 
-                        // Destroy old expressions
-                        expression_destroy(&binary->left);
-                        expression_destroy(&binary->right);
-
-                        // Assign the new literal as the only operand
-                        binary->left = (Expression*)new_literal;
-                        binary->right = NULL;
+                        // Заменить текущее выражение на новое
+                        *expression = new_expr->base;
 
                         return true;
                     }
                 }
             }
 
-            // Maybe the multipliers were found deeper in the expression?
             return other_result;
-        } break;
-    }
+        }
 
-    // Not found
-    return false;
+        default:
+            return false;
+    }
 }
 
 
 
-
+//
+// Expression transformers
+//
 
 // Transform expression to factor differences of squares and return
 // true if if differences of squared were found, false - otherwise.
@@ -472,4 +464,3 @@ static bool expression_equal(const Expression* const lhs,
 
 	return false;
 }
-
