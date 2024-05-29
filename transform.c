@@ -9,7 +9,7 @@
 // @NOTE: Put transformer functions prototypes here
 static bool factor_difference_of_squares(Expression* const expression);
 static bool fold_multipliers_to_diff_of_squares(Expression* const expression);
-static bool fold_multipliers(Expression* const expression);
+static bool replace_degree_with_quotient_of_degrees(Expression* const expression);
 
 // Make deep copy of a given expression.
 static Expression* expression_copy(const Expression* const expression);
@@ -25,7 +25,7 @@ void simplify_expression(Expression* const expression)
 
 	// @NOTE: Put simplification transformer functions here
 	fold_multipliers_to_diff_of_squares(expression);
-	fold_multipliers(expression);
+	replace_degree_with_quotient_of_degrees(expression);
 }
 
 void expand_expression(Expression* const expression)
@@ -89,58 +89,67 @@ double evaluate_expression(const Expression* const expression)
 }
 
 //My func
-static bool fold_multipliers(Expression* const expression) {
+
+
+static bool replace_degree_with_quotient_of_degrees(Expression* const expression) {
     assert(expression != NULL);
 
     switch (expression->type) {
         case ExpressionType_Unary: {
             UnaryExpression* const unary = (UnaryExpression*)expression;
-            return fold_multipliers(unary->subexpression);
-        }
+            return replace_degree_with_quotient_of_degrees(unary->subexpression);
+        } break;
 
         case ExpressionType_Binary: {
             BinaryExpression* const binary = (BinaryExpression*)expression;
 
-            // Рекурсивно обработать левый и правый операнды
-            const bool other_result = fold_multipliers(binary->left) |
-                                      fold_multipliers(binary->right);
+      const bool other_result = replace_degree_with_quotient_of_degrees(binary->left) |
+                      replace_degree_with_quotient_of_degrees(binary->right);
+            
+            Expression* lhs = NULL;
+            BinaryExpression* rhs = NULL;
 
-            // Проверить, является ли операция возведением в степень
-            if (binary->operator == TokenType_Exponent) {
-                // Проверить, является ли левый операнд бинарным выражением с вычитанием
-                if (binary->left->type == ExpressionType_Binary) {
-                    BinaryExpression* const lhs = (BinaryExpression*)binary->left;
-
-                    if (lhs->operator == TokenType_Minus) {
-                        // Создать новое бинарное выражение для частного степеней
-                        BinaryExpression* const new_expr = (BinaryExpression*)malloc(sizeof(BinaryExpression));
-                        new_expr->base.type = ExpressionType_Binary;
-                        new_expr->operator = TokenType_Divide;
-                        // Предполагаем, что expression_copy возвращает указатель на Expression
-                        new_expr->left = expression_copy(lhs->left);
-                        new_expr->right = expression_copy(lhs->right);
-
-                        // Освободить память старого выражения
-                        expression_destroy((Expression**)&binary);
-
-                        // Заменить текущее выражение на новое
-                        *expression = new_expr->base;
-
-                        return true;
-                    }
-                }
+            if (binary->operator != TokenType_Exponent) {
+                return other_result;
             }
 
-            return other_result;
-        }
+      if (binary->right->type != ExpressionType_Binary) {
+        return other_result;
+      }
 
-        default:
-            return false;
+      lhs = (Expression*)binary->left;
+      rhs = (BinaryExpression*)binary->right;
+
+      if (rhs->operator != TokenType_Minus) {
+        return other_result;
+      }
+
+      binary->operator = TokenType_Divide;
+
+      BinaryExpression* const new_lhs = expression_binary_create(TokenType_Exponent, expression_copy(lhs), expression_copy(rhs->left));
+
+      BinaryExpression* const new_rhs = expression_binary_create(TokenType_Exponent, expression_copy(lhs), expression_copy(rhs->right));
+
+      expression_destroy(&binary->left);
+      expression_destroy(&binary->right);
+
+      if (new_lhs->right->type == ExpressionType_Binary) {
+        new_lhs->right->parenthesised = 1;
+            }
+            
+            if (new_rhs->right->type == ExpressionType_Binary) {
+                new_rhs->right->parenthesised = 1;
+            }
+
+      binary->left = (Expression*)new_lhs;
+      binary->right = (Expression*)new_rhs;
+
+            return true;
+        } 
+    break;
     }
+    return false;
 }
-
-
-
 //
 // Expression transformers
 //
